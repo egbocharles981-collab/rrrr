@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>charles Auto Trader</title>
+
+  <!-- Libraries -->
+  <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-financial"></script>
+  <script src="https://cdn.jsdelivr.net/npm/date-fns"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
+
+  <!-- Fonts -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
+
+  <!-- Styles -->
+  <style>
+    body {
+      margin: 0;
+      font-family: 'Inter', sans-serif;
+      background: #0d1117;
+      color: #c9d1d9;
+    }
+    .dashboard {
+      display: grid;
+      grid-template-columns: 2fr 1fr;
+      gap: 20px;
+      padding: 30px;
+    }
+    .card {
+      background: #161b22;
+      padding: 20px;
+      border-radius: 12px;
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4);
+    }
+    button, select, input[type="number"] {
+      width: 100%;
+      padding: 10px;
+      border: none;
+      border-radius: 8px;
+      background: #0d1117;
+      color: white;
+      margin-top: 5px;
+      margin-bottom: 15px;
+    }
+    button {
+      background: #238636;
+      cursor: pointer;
+    }
+    button:hover { background: #2ea043; }
+    .log {
+      height: 250px;
+      overflow-y: auto;
+      background: #0d1117;
+      border: 1px solid #30363d;
+      padding: 10px;
+      border-radius: 8px;
+      font-size: 14px;
+    }
+    #authOverlay {
+      position: fixed;
+      inset: 0;
+      background: #0d1117;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 9999;
+    }
+    #authOverlay input, #authOverlay button {
+      margin-top: 10px;
+      font-size: 16px;
+    }
+    #authOverlay input {
+      background: #161b22;
+      border: 1px solid #30363d;
+      width: 220px;
+    }
+    #authError { color: #f85149; display: none; margin-top: 10px; }
+    footer {
+      background: #161b22;
+      padding: 15px;
+      color: #8b949e;
+      text-align: center;
+      border-top: 1px solid #30363d;
+      font-size: 12px;
+    }
+  </style>
+</head>
+<body>
+
+<!-- Auth Screen -->
+<div id="authOverlay">
+  <h2>Enter Password</h2>
+  <input type="password" id="passwordInput" placeholder="Password" />
+  <button onclick="checkPassword()">Login</button>
+  <p id="authError">Wrong password</p>
+</div>
+
+<!-- Dashboard -->
+<div class="dashboard" id="dashboard" style="display:none;">
+  <!-- Chart -->
+  <div class="card">
+    <h2>SMA Crossover Chart</h2>
+    <canvas id="tradeChart" height="300"></canvas>
+  </div>
+
+  <!-- Controls -->
+  <div class="card control-panel">
+    <h2>Trading Control</h2>
+    <label>Pair</label>
+    <select id="pairSelect">
+      <option value="BTCUSDT">BTC/USDT</option>
+      <option value="ETHUSDT">ETH/USDT</option>
+      <option value="BNBUSDT">BNB/USDT</option>
+      <option value="SOLUSDT">SOL/USDT</option>
+      <option value="XRPUSDT">XRP/USDT</option>
+    </select>
+
+    <label>Quantity</label>
+    <input type="number" id="qtyInput" step="0.001" value="0.001" />
+
+    <label>Timeframe</label>
+    <select id="timeframeSelect">
+      <option value="60000">1 Minute</option>
+      <option value="300000" selected>5 Minutes</option>
+      <option value="900000">15 Minutes</option>
+      <option value="3600000">1 Hour</option>
+
+    </select>
+
+    <p>Status: <strong id="status">Stopped</strong></p>
+    <button onclick="toggleTrading()">Start Auto Trading</button>
+
+    <h3>Trade Log</h3>
+    <div class="log" id="tradeLog"></div>
+  </div>
+</div>
+
+<!-- Footer -->
+<footer>
+  <strong>Disclaimer:</strong> Cryptocurrency trading involves risk. Use at your own discretion.
+</footer>
+
+<script>
+/* === CONFIG === */
+const PASSWORD = 'now4charles';
+// Use current page origin so frontend works regardless of server port
+const API_BASE_URL = window.location.origin;
+let chart, autoTrading = false, isLoggedIn = false;
+
+/* === AUTH === */
+function checkPassword() {
+  const pass = document.getElementById('passwordInput').value;
+  if (pass === PASSWORD) {
+    document.getElementById('authOverlay').style.display = 'none';
+    document.getElementById('dashboard').style.display = 'grid';
+    isLoggedIn = true;
+    initChart();
+    fetchCandle(); // load first data immediately
+  } else {
+    document.getElementById('authError').style.display = 'block';
+  }
+}
+
+/* === CHART INIT === */
+function initChart() {
+  const ctx = document.getElementById('tradeChart').getContext('2d');
+  chart = new Chart(ctx, {
+    type: 'candlestick',
+    data: {
+      datasets: [
+        {
+          label: 'Price',
+          data: [],
+          borderColor: '#58a6ff',
+          color: {
+            up: '#16c784',
+            down: '#ea3943',
+            unchanged: '#8b949e'
+          }
+        },
+        {
+          label: 'SMA 5',
+          data: [],
+          type: 'line',
+          borderColor: '#ff7b72',
+          borderWidth: 1.5,
+          tension: 0.2,
+          pointRadius: 0
+        },
+        {
+          label: 'SMA 10',
+          data: [],
+          type: 'line',
+          borderColor: '#f2cc60',
+          borderWidth: 1.5,
+          tension: 0.2,
+          pointRadius: 0
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      animation: false,
+      plugins: { legend: { labels: { color: '#c9d1d9' } } },
+      scales: {
+        x: { type: 'time', time: { unit: 'minute' }, ticks: { color: '#8b949e' } },
+        y: { ticks: { color: '#8b949e' } }
+      }
+    }
+  });
+}
+
+/* === FETCH CANDLES (Backend provides SMA values too) === */
+async function fetchCandle() {
+  const symbol = document.getElementById('pairSelect').value;
+  const intervalMs = parseInt(document.getElementById('timeframeSelect').value);
+  
+  const intervalMap = {
+    60000: '1m',
+    300000: '5m',
+    900000: '15m',
+    3600000: '1h' // ✅ Added 1-hour option
+  };
+const interval = intervalMap[intervalMs] || '5m';
+
+  try {
+    const res = await axios.get(`${API_BASE_URL}/api/candle?symbol=${symbol}&interval=${interval}`);
+    const candles = res.data.candles || res.data.result?.list || [];
+
+    if (!candles || candles.length === 0) {
+      logTrade('⚠️ No candles returned from backend.');
+      return;
+    }
+
+    const candleData = candles.map(c => ({
+      x: c.time,
+      o: c.open,
+      h: c.high,
+      l: c.low,
+      c: c.close
+    }));
+
+    const sma5Data = candles
+      .filter(c => c.sma5)
+      .map(c => ({ x: c.time, y: c.sma5 }));
+
+    const sma10Data = candles
+      .filter(c => c.sma10)
+      .map(c => ({ x: c.time, y: c.sma10 }));
+
+    updateChart(candleData, sma5Data, sma10Data);
+  } catch (err) {
+    console.error('❌ Candle fetch failed:', err.response?.data || err.message);
+  }
+}
+
+/* === UPDATE CHART === */
+function updateChart(candles, sma5, sma10) {
+  if (!chart) return;
+
+  chart.data.datasets[0].data = candles;
+  chart.data.datasets[1].data = sma5;
+  chart.data.datasets[2].data = sma10;
+
+  chart.update();
+}
+
+/* === TOGGLE AUTO TRADING === */
+let candleInterval;
+
+async function toggleTrading() {
+  autoTrading = !autoTrading;
+  const statusEl = document.getElementById('status');
+  const button = document.querySelector('.control-panel button');
+  const symbol = document.getElementById('pairSelect').value;
+  const intervalMs = parseInt(document.getElementById('timeframeSelect').value);
+  const intervalMap = { 60000: '1m', 300000: '5m', 900000: '15m' };
+  const interval = intervalMap[intervalMs] || '1m';
+
+  try {
+    if (autoTrading) {
+      await axios.post(`${API_BASE_URL}/api/futures/start`, { symbol, interval });
+      statusEl.innerText = 'Running';
+      button.innerText = 'Stop Auto Trading';
+      logTrade('🟢 Auto trading started on backend.');
+
+      fetchCandle(); // first immediate call
+
+      // 🕐 Refresh chart automatically every minute
+      candleInterval = setInterval(fetchCandle, 60 * 1000);
+    } else {
+      await axios.post(`${API_BASE_URL}/api/futures/stop`);
+      statusEl.innerText = 'Stopped';
+      button.innerText = 'Start Auto Trading';
+      logTrade('🔴 Auto trading stopped.');
+
+      // ❌ stop refreshing candles
+      clearInterval(candleInterval);
+    }
+  } catch (err) {
+    const msg = err.response?.data?.message || err.message;
+    logTrade(`⚠️ Error toggling auto trading: ${msg}`);
+    statusEl.innerText = 'Error';
+  }
+}
+
+
+/* === LOGGING === */
+function logTrade(msg) {
+  const log = document.getElementById('tradeLog');
+  const entry = document.createElement('div');
+  entry.textContent = msg;
+  log.appendChild(entry);
+  log.scrollTop = log.scrollHeight;
+}
+</script>
+
+
+</body>
+</html>

@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>BBot - Server IP</title>
+  <style>
+    body { font-family: Arial, Helvetica, sans-serif; max-width:600px; margin:40px auto; }
+    button { padding:10px 16px; font-size:16px; }
+    #ip { margin-top:16px; font-weight:700; }
+  </style>
+</head>
+<body>
+  <h1>BBot Server IP</h1>
+  <p>Click the button to see the public IP the bot is running on.</p>
+  <button id="btn">Show Public IP</button>
+  <div id="ip">-</div>
+
+  <script>
+    document.getElementById('btn').addEventListener('click', async () => {
+      const out = document.getElementById('ip');
+      out.textContent = 'Loading...';
+      try {
+        const res = await fetch('/api/ip');
+        if (!res.ok) {
+          const txt = await res.text();
+          throw new Error(res.status + ' ' + res.statusText + '\n' + txt);
+        }
+        const data = await res.json();
+        out.textContent = data.publicIp || 'unknown';
+      } catch (err) {
+        out.textContent = 'Error: ' + err.message;
+      }
+    });
+  </script>
+</body>
+</html>
