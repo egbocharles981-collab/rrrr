@@ -1,0 +1,23 @@
+{
+  "name": "auto-trader-bot",
+  "version": "1.0.0",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "axios": "^1.10.0",
+    "canvas": "^3.1.2",
+    "chalk": "^4.1.2",
+    "chart.js": "^4.5.0",
+    "chartjs-adapter-date-fns": "^3.0.0",
+    "chartjs-chart-financial": "^0.2.1",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.0",
+    "express": "^5.1.0",
+    "technicalindicators": "^3.1.0"
+  },
+  "devDependencies": {
+    "live-server": "^1.2.2"
+  }
+}
