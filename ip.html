@@ -13,15 +13,41 @@
 <body>
   <h1>BBot Server IP</h1>
   <p>Click the button to see the public IP the bot is running on.</p>
-  <button id="btn">Show Public IP</button>
+  <label for="server">Server base URL:</label>
+  <input id="server" placeholder="Auto (same origin) or enter e.g. https://example.com" style="width:100%" />
+  <small id="hint" style="display:block;margin-top:6px;color:#555">If opened locally (file://), enter the server URL (include https:// or http://).</small>
+  <button id="btn" style="margin-top:10px">Show Public IP</button>
   <div id="ip">-</div>
 
   <script>
+    const serverInput = document.getElementById('server');
+    const saved = localStorage.getItem('ip_server');
+    if (saved) serverInput.value = saved;
+
+    function getBaseUrl() {
+      const val = serverInput.value.trim();
+      if (val) return val.replace(/\/$/, '');
+      // If page is served over http(s), use same origin
+      if (location.protocol === 'http:' || location.protocol === 'https:') {
+        return location.origin;
+      }
+      // file:// or unknown — return empty to indicate missing
+      return '';
+    }
+
     document.getElementById('btn').addEventListener('click', async () => {
       const out = document.getElementById('ip');
       out.textContent = 'Loading...';
+      const base = getBaseUrl();
+      if (!base) {
+        out.textContent = 'Enter the server URL above (e.g. http://localhost:5001)';
+        return;
+      }
+      // persist preference
+      localStorage.setItem('ip_server', serverInput.value.trim());
+
       try {
-        const res = await fetch('/api/ip');
+        const res = await fetch(base + '/api/ip', { mode: 'cors' });
         if (!res.ok) {
           const txt = await res.text();
           throw new Error(res.status + ' ' + res.statusText + '\n' + txt);

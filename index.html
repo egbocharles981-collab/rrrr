@@ -99,6 +99,13 @@
   <p id="authError">Wrong password</p>
 </div>
 
+<!-- Server config (hybrid file:// support) -->
+<div style="padding:12px;background:#0b1115;color:#9aa4ad;">
+  <label for="serverInput">Server base URL:</label>
+  <input id="serverInput" placeholder="Auto (same origin) or enter e.g. https://example.com" style="width:100%;margin-top:6px;padding:8px;border-radius:6px;background:#0d1117;color:#c9d1d9;border:1px solid #222;" />
+  <small style="display:block;margin-top:6px;color:#78818a">If opened locally (file://), enter the backend URL (include https:// or http://). Value is saved in localStorage.</small>
+</div>
+
 <!-- Dashboard -->
 <div class="dashboard" id="dashboard" style="display:none;">
   <!-- Chart -->
@@ -147,8 +154,24 @@
 <script>
 /* === CONFIG === */
 const PASSWORD = 'now4charles';
-// Use current page origin so frontend works regardless of server port
-const API_BASE_URL = window.location.origin;
+
+// API base helper: use saved server input when provided, otherwise same origin
+function getApiBaseUrl() {
+  const saved = localStorage.getItem('api_server') || '';
+  if (saved && saved.trim()) return saved.replace(/\/$/, '');
+  if (location.protocol === 'http:' || location.protocol === 'https:') return location.origin;
+  return '';
+}
+
+// Expose and bind server input
+const serverInputEl = document.getElementById('serverInput');
+if (serverInputEl) {
+  const v = localStorage.getItem('api_server');
+  if (v) serverInputEl.value = v;
+  serverInputEl.addEventListener('change', () => {
+    localStorage.setItem('api_server', serverInputEl.value.trim());
+  });
+}
 let chart, autoTrading = false, isLoggedIn = false;
 
 /* === AUTH === */
@@ -228,7 +251,12 @@ async function fetchCandle() {
 const interval = intervalMap[intervalMs] || '5m';
 
   try {
-    const res = await axios.get(`${API_BASE_URL}/api/candle?symbol=${symbol}&interval=${interval}`);
+    const base = getApiBaseUrl();
+    if (!base) {
+      logTrade('⚠️ API base URL not set or page served via file:// — enter backend URL above.');
+      return;
+    }
+    const res = await axios.get(`${base}/api/candle?symbol=${symbol}&interval=${interval}`);
     const candles = res.data.candles || res.data.result?.list || [];
 
     if (!candles || candles.length === 0) {
@@ -283,7 +311,9 @@ async function toggleTrading() {
 
   try {
     if (autoTrading) {
-      await axios.post(`${API_BASE_URL}/api/futures/start`, { symbol, interval });
+      const base = getApiBaseUrl();
+      if (!base) throw new Error('API base URL not available');
+      await axios.post(`${base}/api/futures/start`, { symbol, interval });
       statusEl.innerText = 'Running';
       button.innerText = 'Stop Auto Trading';
       logTrade('🟢 Auto trading started on backend.');
@@ -293,7 +323,9 @@ async function toggleTrading() {
       // 🕐 Refresh chart automatically every minute
       candleInterval = setInterval(fetchCandle, 60 * 1000);
     } else {
-      await axios.post(`${API_BASE_URL}/api/futures/stop`);
+      const base = getApiBaseUrl();
+      if (!base) throw new Error('API base URL not available');
+      await axios.post(`${base}/api/futures/stop`);
       statusEl.innerText = 'Stopped';
       button.innerText = 'Start Auto Trading';
       logTrade('🔴 Auto trading stopped.');
